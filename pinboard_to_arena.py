@@ -53,14 +53,14 @@ class PinboardToArena:
             print(f"Error fetching bookmarks: {e}")
             sys.exit(1)
 
-    def create_arena_channel(self, title: str = "Pinboard"):
+    def create_arena_channel(self, title: str = "pinboard"):
         """Create new are.na channel"""
         if self.progress["channel_slug"]:
             print(f"Using existing channel: {self.progress['channel_slug']}")
             return self.arena.channels.channel(self.progress["channel_slug"])
 
         if self.dry_run:
-            print("[DRY RUN] Would create channel: Pinboard")
+            print("[DRY RUN] Would create channel: pinboard")
             return None
 
         print("Creating are.na channel...")
