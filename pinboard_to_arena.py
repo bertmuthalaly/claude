@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 from typing import Dict, List
 import requests
-from arena import Arena
 
 
 # Configuration
@@ -21,8 +20,11 @@ RATE_LIMIT = 240  # Requests per minute (buffer below 250)
 class PinboardToArena:
     def __init__(self, dry_run: bool = False):
         self.dry_run = dry_run
-        self.arena = Arena(ARENA_TOKEN)
-        self.pinboard_session = requests.Session()
+        self.session = requests.Session()
+        self.session.headers.update({
+            "Authorization": f"Bearer {ARENA_TOKEN}",
+            "Content-Type": "application/json"
+        })
         self.progress = self._load_progress()
 
     def _load_progress(self) -> Dict:
@@ -44,7 +46,8 @@ class PinboardToArena:
         params = {"auth_token": PINBOARD_TOKEN, "format": "json"}
 
         try:
-            resp = self.pinboard_session.get(url, params=params, timeout=30)
+            # Use separate request without auth headers for Pinboard
+            resp = requests.get(url, params=params, timeout=30)
             resp.raise_for_status()
             bookmarks = resp.json()
             print(f"Found {len(bookmarks)} bookmarks")
@@ -53,28 +56,34 @@ class PinboardToArena:
             print(f"Error fetching bookmarks: {e}")
             sys.exit(1)
 
-    def create_arena_channel(self, title: str = "pinboard"):
+    def create_arena_channel(self, title: str = "pinboard") -> str:
         """Create new are.na channel"""
         if self.progress["channel_slug"]:
             print(f"Using existing channel: {self.progress['channel_slug']}")
-            return self.arena.channels.channel(self.progress["channel_slug"])
+            return self.progress["channel_slug"]
 
         if self.dry_run:
             print("[DRY RUN] Would create channel: pinboard")
-            return None
+            return "pinboard-dry-run"
 
         print("Creating are.na channel...")
         try:
-            channel = self.arena.channels.create(title=title, status="private")
-            self.progress["channel_slug"] = channel.slug
+            resp = self.session.post(
+                "https://api.are.na/v2/channels",
+                json={"title": title, "status": "private"},
+                timeout=30
+            )
+            resp.raise_for_status()
+            slug = resp.json()["slug"]
+            self.progress["channel_slug"] = slug
             self._save_progress()
-            print(f"Created channel: {channel.slug}")
-            return channel
+            print(f"Created channel: {slug}")
+            return slug
         except Exception as e:
             print(f"Error creating channel: {e}")
             sys.exit(1)
 
-    def add_block_to_channel(self, channel, url: str, description: str) -> bool:
+    def add_block_to_channel(self, channel_slug: str, url: str, description: str) -> bool:
         """Add a bookmark as a block to are.na channel"""
         if self.dry_run:
             print(f"[DRY RUN] Would import: {url}")
@@ -83,7 +92,12 @@ class PinboardToArena:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                channel.add_block(source=url, description=description)
+                resp = self.session.post(
+                    f"https://api.are.na/v2/channels/{channel_slug}/blocks",
+                    json={"source": url, "description": description},
+                    timeout=30
+                )
+                resp.raise_for_status()
                 return True
             except Exception as e:
                 if attempt == max_retries - 1:
@@ -95,7 +109,7 @@ class PinboardToArena:
     def import_bookmarks(self):
         """Main import logic"""
         bookmarks = self.fetch_pinboard_bookmarks()
-        channel = self.create_arena_channel()
+        channel_slug = self.create_arena_channel()
 
         # Filter out already imported
         to_import = [
@@ -127,7 +141,7 @@ class PinboardToArena:
 
             print(f"[{i}/{len(to_import)}] {url[:60]}...")
 
-            if self.add_block_to_channel(channel, url, full_desc):
+            if self.add_block_to_channel(channel_slug, url, full_desc):
                 successful += 1
                 if not self.dry_run:
                     self.progress["imported_urls"].append(url)
