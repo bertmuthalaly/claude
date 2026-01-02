@@ -73,6 +73,8 @@ class PinboardToArena:
                 json={"title": title, "status": "private"},
                 timeout=30
             )
+            print(f"Debug - Status code: {resp.status_code}")
+            print(f"Debug - Response: {resp.text}")
             resp.raise_for_status()
             slug = resp.json()["slug"]
             self.progress["channel_slug"] = slug
@@ -81,6 +83,7 @@ class PinboardToArena:
             return slug
         except Exception as e:
             print(f"Error creating channel: {e}")
+            print(f"Debug - Request headers: {dict(self.session.headers)}")
             sys.exit(1)
 
     def add_block_to_channel(self, channel_slug: str, url: str, description: str) -> bool:
