@@ -23,7 +23,8 @@ class PinboardToArena:
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {ARENA_TOKEN}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "User-Agent": "pinboard-arena-importer"
         })
         self.progress = self._load_progress()
 
