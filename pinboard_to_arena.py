@@ -6,14 +6,14 @@ import json
 import time
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 import requests
+from arena import Arena
 
 
 # Configuration
 PINBOARD_TOKEN = "bgmuthalaly:5FD9220B64ABDA7D78C5"
-ARENA_SECRET = "y17gZmcXRuxc86GUTpo9d5rhO7OBYA6YkU37psX3ehI"
-ARENA_UID = "m9Ov0KicAHx_BusdOkWdu3cUNPy3rOG2nsgMyQhrnQ8"
+ARENA_TOKEN = "y17gZmcXRuxc86GUTpo9d5rhO7OBYA6YkU37psX3ehI"
 PROGRESS_FILE = "import_progress.json"
 RATE_LIMIT = 240  # Requests per minute (buffer below 250)
 
@@ -21,8 +21,8 @@ RATE_LIMIT = 240  # Requests per minute (buffer below 250)
 class PinboardToArena:
     def __init__(self, dry_run: bool = False):
         self.dry_run = dry_run
-        self.session = requests.Session()
-        self.session.headers.update({"Authorization": f"Bearer {ARENA_SECRET}"})
+        self.arena = Arena(ARENA_TOKEN)
+        self.pinboard_session = requests.Session()
         self.progress = self._load_progress()
 
     def _load_progress(self) -> Dict:
@@ -44,7 +44,7 @@ class PinboardToArena:
         params = {"auth_token": PINBOARD_TOKEN, "format": "json"}
 
         try:
-            resp = self.session.get(url, params=params, timeout=30)
+            resp = self.pinboard_session.get(url, params=params, timeout=30)
             resp.raise_for_status()
             bookmarks = resp.json()
             print(f"Found {len(bookmarks)} bookmarks")
@@ -53,63 +53,49 @@ class PinboardToArena:
             print(f"Error fetching bookmarks: {e}")
             sys.exit(1)
 
-    def create_arena_channel(self, title: str = "Pinboard") -> str:
+    def create_arena_channel(self, title: str = "Pinboard"):
         """Create new are.na channel"""
         if self.progress["channel_slug"]:
             print(f"Using existing channel: {self.progress['channel_slug']}")
-            return self.progress["channel_slug"]
+            return self.arena.channels.channel(self.progress["channel_slug"])
 
         if self.dry_run:
             print("[DRY RUN] Would create channel: Pinboard")
-            return "pinboard-dry-run"
+            return None
 
         print("Creating are.na channel...")
-        url = "https://api.are.na/v2/channels"
-        data = {"title": title, "status": "private"}
-
         try:
-            resp = self.session.post(url, json=data, timeout=30)
-            resp.raise_for_status()
-            slug = resp.json()["slug"]
-            self.progress["channel_slug"] = slug
+            channel = self.arena.channels.create(title=title, status="private")
+            self.progress["channel_slug"] = channel.slug
             self._save_progress()
-            print(f"Created channel: {slug}")
-            return slug
+            print(f"Created channel: {channel.slug}")
+            return channel
         except Exception as e:
             print(f"Error creating channel: {e}")
             sys.exit(1)
 
-    def add_block_to_channel(self, channel_slug: str, url: str, description: str) -> bool:
+    def add_block_to_channel(self, channel, url: str, description: str) -> bool:
         """Add a bookmark as a block to are.na channel"""
         if self.dry_run:
             print(f"[DRY RUN] Would import: {url}")
             return True
 
-        api_url = f"https://api.are.na/v2/channels/{channel_slug}/blocks"
-        data = {"source": url}
-        if description:
-            data["description"] = description
-
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                resp = self.session.post(api_url, json=data, timeout=30)
-                resp.raise_for_status()
+                channel.add_block(source=url, description=description)
                 return True
-            except requests.exceptions.HTTPError as e:
+            except Exception as e:
                 if attempt == max_retries - 1:
                     print(f"Failed to import {url}: {e}")
                     return False
                 time.sleep(2 ** attempt)  # Exponential backoff
-            except Exception as e:
-                print(f"Error importing {url}: {e}")
-                return False
         return False
 
     def import_bookmarks(self):
         """Main import logic"""
         bookmarks = self.fetch_pinboard_bookmarks()
-        channel_slug = self.create_arena_channel()
+        channel = self.create_arena_channel()
 
         # Filter out already imported
         to_import = [
@@ -141,7 +127,7 @@ class PinboardToArena:
 
             print(f"[{i}/{len(to_import)}] {url[:60]}...")
 
-            if self.add_block_to_channel(channel_slug, url, full_desc):
+            if self.add_block_to_channel(channel, url, full_desc):
                 successful += 1
                 if not self.dry_run:
                     self.progress["imported_urls"].append(url)
@@ -162,7 +148,7 @@ class PinboardToArena:
             print(f"✗ Failed: {failed}")
 
         if not self.dry_run:
-            print(f"\nChannel: https://www.are.na/{channel_slug}")
+            print(f"\nChannel: https://www.are.na/{self.progress['channel_slug']}")
 
 
 def main():
