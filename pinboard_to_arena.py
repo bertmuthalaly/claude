@@ -12,7 +12,7 @@ import requests
 
 # Configuration
 PINBOARD_TOKEN = "bgmuthalaly:5FD9220B64ABDA7D78C5"
-ARENA_TOKEN = "y17gZmcXRuxc86GUTpo9d5rhO7OBYA6YkU37psX3ehI"
+ARENA_TOKEN = "q-y8NchIqDPeZ2IqflfxaTFk-Vm0PhjXDjTNIMD9s7E"
 PROGRESS_FILE = "import_progress.json"
 RATE_LIMIT = 240  # Requests per minute (buffer below 250)
 
