@@ -121,7 +121,9 @@ class PinboardToArena:
             print("All bookmarks already imported!")
             return
 
-        print(f"Importing {len(to_import)} bookmarks...")
+        # Sort oldest to newest to preserve chronological order in are.na
+        to_import.sort(key=lambda b: b.get("time", ""))
+        print(f"Importing {len(to_import)} bookmarks (oldest to newest)...")
         if self.dry_run:
             print("[DRY RUN] No actual imports will be made\n")
 
