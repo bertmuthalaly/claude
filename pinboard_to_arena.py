@@ -14,7 +14,7 @@ import requests
 PINBOARD_TOKEN = "bgmuthalaly:5FD9220B64ABDA7D78C5"
 ARENA_TOKEN = "q-y8NchIqDPeZ2IqflfxaTFk-Vm0PhjXDjTNIMD9s7E"
 PROGRESS_FILE = "import_progress.json"
-RATE_LIMIT = 240  # Requests per minute (buffer below 250)
+RATE_LIMIT = 60  # Requests per minute (conservative to avoid 429s)
 
 
 class PinboardToArena:
@@ -74,8 +74,6 @@ class PinboardToArena:
                 json={"title": title, "status": "private"},
                 timeout=30
             )
-            print(f"Debug - Status code: {resp.status_code}")
-            print(f"Debug - Response: {resp.text}")
             resp.raise_for_status()
             slug = resp.json()["slug"]
             self.progress["channel_slug"] = slug
@@ -84,7 +82,6 @@ class PinboardToArena:
             return slug
         except Exception as e:
             print(f"Error creating channel: {e}")
-            print(f"Debug - Request headers: {dict(self.session.headers)}")
             sys.exit(1)
 
     def add_block_to_channel(self, channel_slug: str, url: str, description: str) -> bool:
@@ -93,7 +90,7 @@ class PinboardToArena:
             print(f"[DRY RUN] Would import: {url}")
             return True
 
-        max_retries = 3
+        max_retries = 5
         for attempt in range(max_retries):
             try:
                 resp = self.session.post(
@@ -103,11 +100,26 @@ class PinboardToArena:
                 )
                 resp.raise_for_status()
                 return True
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 429:
+                    # Rate limit hit - wait longer
+                    wait_time = 60 if attempt < 2 else 120
+                    print(f"  Rate limit hit, waiting {wait_time}s...")
+                    time.sleep(wait_time)
+                    if attempt == max_retries - 1:
+                        print(f"  Failed after {max_retries} retries")
+                        return False
+                else:
+                    # Other HTTP error
+                    if attempt == max_retries - 1:
+                        print(f"  Failed: {e}")
+                        return False
+                    time.sleep(2 ** attempt)
             except Exception as e:
                 if attempt == max_retries - 1:
-                    print(f"Failed to import {url}: {e}")
+                    print(f"  Failed: {e}")
                     return False
-                time.sleep(2 ** attempt)  # Exponential backoff
+                time.sleep(2 ** attempt)
         return False
 
     def import_bookmarks(self):
