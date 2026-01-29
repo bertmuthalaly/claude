@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Vision Trainer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Chess Vision Trainer</h1>
+        <p class="subtitle">Find all legal moves as fast as you can!</p>
+
+        <div class="stats-bar">
+            <div class="stat">
+                <span class="stat-label">Time:</span>
+                <span id="timer" class="stat-value">0.00s</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Moves Found:</span>
+                <span id="moves-found" class="stat-value">0</span> / <span id="total-moves" class="stat-value">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Mistakes:</span>
+                <span id="mistakes" class="stat-value">0</span>
+            </div>
+        </div>
+
+        <div class="game-area">
+            <div class="board-container">
+                <div id="board" class="board"></div>
+            </div>
+
+            <div class="side-panel">
+                <div class="turn-indicator">
+                    <span id="turn-text">White to move</span>
+                </div>
+
+                <div class="move-selection">
+                    <p>Current selection:</p>
+                    <div id="selection-display" class="selection-display">
+                        <span id="from-square" class="square-display">-</span>
+                        <span class="arrow">→</span>
+                        <span id="to-square" class="square-display">-</span>
+                    </div>
+                </div>
+
+                <div class="found-moves">
+                    <h3>Found Moves:</h3>
+                    <div id="found-moves-list" class="moves-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="start-btn" class="btn btn-primary">Start Game</button>
+            <button id="new-position-btn" class="btn btn-secondary" disabled>New Position</button>
+            <button id="hint-btn" class="btn btn-hint" disabled>Show Hint</button>
+        </div>
+
+        <div id="result-modal" class="modal hidden">
+            <div class="modal-content">
+                <h2>Round Complete!</h2>
+                <div class="result-stats">
+                    <p>Time: <span id="final-time" class="highlight"></span></p>
+                    <p>Moves Found: <span id="final-moves" class="highlight"></span></p>
+                    <p>Mistakes: <span id="final-mistakes" class="highlight"></span></p>
+                    <p>Score: <span id="final-score" class="highlight"></span></p>
+                </div>
+                <button id="play-again-btn" class="btn btn-primary">Play Again</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
