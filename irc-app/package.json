@@ -1,0 +1,19 @@
+{
+  "name": "irc-lite",
+  "version": "1.0.0",
+  "description": "Lightweight IRC client with Service Workers and DataScript",
+  "main": "app.js",
+  "scripts": {
+    "test": "node --expose-gc tests/state-test.js",
+    "serve": "npx serve .",
+    "serve:https": "npx serve . --ssl-cert cert.pem --ssl-key key.pem"
+  },
+  "dependencies": {
+    "datascript": "^1.6.5"
+  },
+  "devDependencies": {
+    "serve": "^14.0.0"
+  },
+  "keywords": ["irc", "chat", "service-worker", "datascript", "pwa"],
+  "license": "MIT"
+}

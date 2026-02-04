@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IRC App Memory Leak Tests</title>
+  <style>
+    body {
+      font-family: ui-monospace, monospace;
+      padding: 20px;
+      background: #1a1a2e;
+      color: #e8e8e8;
+    }
+    .test {
+      margin: 10px 0;
+      padding: 10px;
+      border: 1px solid #333;
+      border-radius: 4px;
+    }
+    .pass { border-color: #4f4; }
+    .fail { border-color: #f44; }
+    .running { border-color: #ff4; }
+    h1 { color: #4a9eff; }
+    h2 { color: #888; font-size: 14px; }
+    pre { background: #16213e; padding: 10px; overflow: auto; }
+    button {
+      background: #4a9eff;
+      border: none;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    #results { margin-top: 20px; }
+    .metric { display: inline-block; margin: 10px 20px 10px 0; }
+    .metric-value { font-size: 24px; color: #4a9eff; }
+    .metric-label { color: #888; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Memory Leak Detection Tests</h1>
+
+  <div>
+    <button onclick="runAllTests()">Run All Tests</button>
+    <button onclick="runTest('messageChurn')">Message Churn</button>
+    <button onclick="runTest('channelChurn')">Channel Churn</button>
+    <button onclick="runTest('subscriptionLeak')">Subscription Leak</button>
+    <button onclick="runTest('domLeak')">DOM Leak</button>
+    <button onclick="runTest('longRunning')">Long Running</button>
+  </div>
+
+  <div id="metrics">
+    <div class="metric">
+      <div class="metric-value" id="heap-used">-</div>
+      <div class="metric-label">Heap Used (MB)</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value" id="heap-total">-</div>
+      <div class="metric-label">Heap Total (MB)</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value" id="messages">-</div>
+      <div class="metric-label">Messages in State</div>
+    </div>
+  </div>
+
+  <div id="results"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/datascript@1.6.5/dist/datascript.min.js"></script>
+  <script src="../state.js"></script>
+  <script src="../irc.js"></script>
+
+  <script>
+    // Test framework
+    const tests = {};
+    const results = [];
+
+    function log(msg) {
+      document.getElementById('results').innerHTML += `<div>${msg}</div>`;
+    }
+
+    function getMemory() {
+      if (!performance.memory) {
+        return { used: 0, total: 0 };
+      }
+      return {
+        used: performance.memory.usedJSHeapSize / 1024 / 1024,
+        total: performance.memory.totalJSHeapSize / 1024 / 1024
+      };
+    }
+
+    function updateMetrics() {
+      const mem = getMemory();
+      const stats = State.getStats();
+
+      document.getElementById('heap-used').textContent = mem.used.toFixed(2);
+      document.getElementById('heap-total').textContent = mem.total.toFixed(2);
+      document.getElementById('messages').textContent = stats.messages;
+    }
+
+    setInterval(updateMetrics, 1000);
+
+    // Force GC if available (Chrome with --expose-gc flag)
+    function forceGC() {
+      if (typeof gc === 'function') {
+        gc();
+      } else {
+        // Allocate and release large arrays to trigger GC
+        let arrays = [];
+        for (let i = 0; i < 100; i++) {
+          arrays.push(new Array(10000).fill(0));
+        }
+        arrays = null;
+      }
+    }
+
+    // Test: Message churn - add/remove many messages
+    tests.messageChurn = async function() {
+      const testId = 'messageChurn';
+      const el = document.getElementById(`test-${testId}`);
+      el.className = 'test running';
+
+      State.reset();
+      forceGC();
+      await sleep(100);
+
+      const memBefore = getMemory();
+      const iterations = 10;
+      const messagesPerIteration = 1000;
+
+      State.addConnection('test', 'test.com', 'testuser');
+      State.addChannel('test', '#test');
+
+      for (let i = 0; i < iterations; i++) {
+        // Add messages
+        for (let j = 0; j < messagesPerIteration; j++) {
+          State.addMessage('test:#test', 'user', `Message ${i}-${j} with some content`);
+        }
+
+        // Message pruning should kick in automatically
+        await sleep(10);
+
+        el.querySelector('.status').textContent = `Iteration ${i + 1}/${iterations}`;
+      }
+
+      forceGC();
+      await sleep(500);
+
+      const memAfter = getMemory();
+      const stats = State.getStats();
+
+      // Should have pruned to MAX_MSGS_PER_CHAN (500)
+      const memGrowth = memAfter.used - memBefore.used;
+      const passed = stats.messages <= 600 && memGrowth < 50; // Allow some growth but not linear
+
+      el.className = `test ${passed ? 'pass' : 'fail'}`;
+      el.querySelector('.status').textContent = passed ? 'PASS' : 'FAIL';
+      el.querySelector('.details').textContent = `Messages: ${stats.messages}, Memory growth: ${memGrowth.toFixed(2)}MB`;
+
+      return passed;
+    };
+
+    // Test: Channel churn - create/destroy channels
+    tests.channelChurn = async function() {
+      const testId = 'channelChurn';
+      const el = document.getElementById(`test-${testId}`);
+      el.className = 'test running';
+
+      State.reset();
+      forceGC();
+      await sleep(100);
+
+      const memBefore = getMemory();
+
+      State.addConnection('test', 'test.com', 'testuser');
+
+      for (let i = 0; i < 100; i++) {
+        const chanName = `#channel${i}`;
+        State.addChannel('test', chanName);
+
+        // Add some messages
+        for (let j = 0; j < 50; j++) {
+          State.addMessage(`test:${chanName}`, 'user', `Message ${j}`);
+        }
+
+        // Clear messages
+        State.clearMessages(`test:${chanName}`);
+
+        el.querySelector('.status').textContent = `Channel ${i + 1}/100`;
+      }
+
+      forceGC();
+      await sleep(500);
+
+      const memAfter = getMemory();
+      const stats = State.getStats();
+      const memGrowth = memAfter.used - memBefore.used;
+
+      // Messages should be cleared
+      const passed = stats.messages < 100 && memGrowth < 20;
+
+      el.className = `test ${passed ? 'pass' : 'fail'}`;
+      el.querySelector('.status').textContent = passed ? 'PASS' : 'FAIL';
+      el.querySelector('.details').textContent = `Messages: ${stats.messages}, Channels: ${stats.channels}, Memory growth: ${memGrowth.toFixed(2)}MB`;
+
+      return passed;
+    };
+
+    // Test: Subscription leak
+    tests.subscriptionLeak = async function() {
+      const testId = 'subscriptionLeak';
+      const el = document.getElementById(`test-${testId}`);
+      el.className = 'test running';
+
+      State.reset();
+      forceGC();
+      await sleep(100);
+
+      const memBefore = getMemory();
+      const unsubscribers = [];
+
+      // Create many subscriptions
+      for (let i = 0; i < 1000; i++) {
+        const unsub = State.subscribe(() => {});
+        unsubscribers.push(unsub);
+        el.querySelector('.status').textContent = `Subscribe ${i + 1}/1000`;
+      }
+
+      // Unsubscribe all
+      for (const unsub of unsubscribers) {
+        unsub();
+      }
+      unsubscribers.length = 0;
+
+      forceGC();
+      await sleep(500);
+
+      const memAfter = getMemory();
+      const memGrowth = memAfter.used - memBefore.used;
+
+      // Should not have significant memory growth after unsubscribing
+      const passed = memGrowth < 5;
+
+      el.className = `test ${passed ? 'pass' : 'fail'}`;
+      el.querySelector('.status').textContent = passed ? 'PASS' : 'FAIL';
+      el.querySelector('.details').textContent = `Memory growth: ${memGrowth.toFixed(2)}MB`;
+
+      return passed;
+    };
+
+    // Test: DOM element leak
+    tests.domLeak = async function() {
+      const testId = 'domLeak';
+      const el = document.getElementById(`test-${testId}`);
+      el.className = 'test running';
+
+      // Create a container for test DOM
+      const container = document.createElement('div');
+      container.id = 'dom-test-container';
+      document.body.appendChild(container);
+
+      State.reset();
+      State.addConnection('test', 'test.com', 'testuser');
+      State.addChannel('test', '#test');
+
+      forceGC();
+      await sleep(100);
+
+      const memBefore = getMemory();
+
+      // Simulate rendering many times
+      for (let i = 0; i < 100; i++) {
+        // Add messages
+        for (let j = 0; j < 100; j++) {
+          State.addMessage('test:#test', 'user', `Message ${i}-${j}`);
+        }
+
+        // Simulate rendering
+        const frag = document.createDocumentFragment();
+        const messages = State.getMessages('test:#test', 100);
+
+        for (const msg of messages) {
+          const div = document.createElement('div');
+          div.textContent = `${msg['msg/nick']}: ${msg['msg/text']}`;
+          frag.appendChild(div);
+        }
+
+        container.textContent = '';
+        container.appendChild(frag);
+
+        el.querySelector('.status').textContent = `Render ${i + 1}/100`;
+
+        await sleep(10);
+      }
+
+      // Cleanup
+      container.remove();
+
+      forceGC();
+      await sleep(500);
+
+      const memAfter = getMemory();
+      const memGrowth = memAfter.used - memBefore.used;
+
+      const passed = memGrowth < 30;
+
+      el.className = `test ${passed ? 'pass' : 'fail'}`;
+      el.querySelector('.status').textContent = passed ? 'PASS' : 'FAIL';
+      el.querySelector('.details').textContent = `Memory growth: ${memGrowth.toFixed(2)}MB`;
+
+      return passed;
+    };
+
+    // Test: Long running simulation
+    tests.longRunning = async function() {
+      const testId = 'longRunning';
+      const el = document.getElementById(`test-${testId}`);
+      el.className = 'test running';
+
+      State.reset();
+      State.addConnection('test', 'test.com', 'testuser');
+      State.addChannel('test', '#test');
+
+      forceGC();
+      await sleep(100);
+
+      const memBefore = getMemory();
+      const duration = 30000; // 30 seconds
+      const start = Date.now();
+
+      while (Date.now() - start < duration) {
+        // Simulate message activity
+        State.addMessage('test:#test', 'user' + Math.floor(Math.random() * 10), 'Message ' + Math.random());
+
+        // Occasionally clear old messages
+        if (Math.random() < 0.01) {
+          State.clearMessages('test:#test');
+        }
+
+        // Simulate subscriptions
+        if (Math.random() < 0.1) {
+          const unsub = State.subscribe(() => {});
+          setTimeout(unsub, 100);
+        }
+
+        const elapsed = ((Date.now() - start) / 1000).toFixed(0);
+        el.querySelector('.status').textContent = `Running ${elapsed}s / ${duration / 1000}s`;
+
+        await sleep(50);
+      }
+
+      forceGC();
+      await sleep(1000);
+
+      const memAfter = getMemory();
+      const memGrowth = memAfter.used - memBefore.used;
+      const stats = State.getStats();
+
+      // Memory should be relatively stable
+      const passed = memGrowth < 50 && stats.messages <= 600;
+
+      el.className = `test ${passed ? 'pass' : 'fail'}`;
+      el.querySelector('.status').textContent = passed ? 'PASS' : 'FAIL';
+      el.querySelector('.details').textContent = `Memory growth: ${memGrowth.toFixed(2)}MB, Messages: ${stats.messages}`;
+
+      return passed;
+    };
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function runTest(name) {
+      if (!tests[name]) {
+        log(`Unknown test: ${name}`);
+        return;
+      }
+
+      try {
+        await tests[name]();
+      } catch (err) {
+        const el = document.getElementById(`test-${name}`);
+        el.className = 'test fail';
+        el.querySelector('.status').textContent = 'ERROR';
+        el.querySelector('.details').textContent = err.message;
+        console.error(err);
+      }
+    }
+
+    async function runAllTests() {
+      for (const name in tests) {
+        await runTest(name);
+        await sleep(1000);
+      }
+    }
+
+    // Create test elements
+    document.getElementById('results').innerHTML = Object.keys(tests).map(name => `
+      <div class="test" id="test-${name}">
+        <h2>${name}</h2>
+        <div class="status">Ready</div>
+        <div class="details"></div>
+      </div>
+    `).join('');
+
+    // Initial metrics
+    updateMetrics();
+
+    // Note about Chrome flags
+    if (!performance.memory) {
+      log('<div style="color: #ff4">Note: For accurate memory measurements, run Chrome with --enable-precise-memory-info flag</div>');
+    }
+    if (typeof gc === 'undefined') {
+      log('<div style="color: #ff4">Note: For forced GC, run Chrome with --expose-gc flag</div>');
+    }
+  </script>
+</body>
+</html>
