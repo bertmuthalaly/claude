@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ZulipIRC">
+    <meta name="theme-color" content="#1a1a2e">
+    <title>ZulipIRC</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="app">
+        <header id="header">
+            <button id="menu-btn" aria-label="Menu">☰</button>
+            <h1 id="channel-name">ZulipIRC</h1>
+            <span id="status" class="offline">●</span>
+        </header>
+
+        <nav id="sidebar" class="hidden">
+            <div id="streams-list"></div>
+            <div id="connection-info">
+                <input type="text" id="server-url" placeholder="zulip.example.com" autocomplete="url">
+                <input type="email" id="user-email" placeholder="you@example.com" autocomplete="email">
+                <input type="password" id="api-key" placeholder="API Key" autocomplete="current-password">
+                <button id="connect-btn">Connect</button>
+                <button id="disconnect-btn" class="hidden">Disconnect</button>
+            </div>
+        </nav>
+
+        <main id="messages" role="log" aria-live="polite"></main>
+
+        <footer id="input-area">
+            <form id="message-form">
+                <input type="text" id="message-input" placeholder="Type message..." autocomplete="off" enterkeyhint="send">
+                <button type="submit" id="send-btn">▶</button>
+            </form>
+            <div id="queue-status" class="hidden">
+                <span id="queue-count">0</span> queued
+            </div>
+        </footer>
+    </div>
+
+    <div id="toast" class="hidden"></div>
+
+    <script src="js/memory-monitor.js"></script>
+    <script src="js/message-store.js"></script>
+    <script src="js/zulip-client.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

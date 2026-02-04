@@ -1,0 +1,26 @@
+{
+  "name": "ZulipIRC - Low Bandwidth Chat",
+  "short_name": "ZulipIRC",
+  "description": "Minimalist Zulip client for low bandwidth environments",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "social"],
+  "prefer_related_applications": false
+}

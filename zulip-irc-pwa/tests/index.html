@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZulipIRC - Memory Tests</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: "SF Mono", Monaco, Consolas, monospace;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        h1 {
+            color: #4a9eff;
+            margin-bottom: 20px;
+        }
+
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: #4a9eff;
+            color: #1a1a2e;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #6ab0ff;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #output {
+            background: #0d0d0d;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 15px;
+            max-height: 70vh;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-size: 13px;
+        }
+
+        .pass { color: #4aff4a; }
+        .fail { color: #ff4a4a; }
+        .info { color: #888; }
+        .header { color: #4a9eff; font-weight: bold; }
+
+        #memory-display {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 15px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        #summary {
+            margin-top: 20px;
+            padding: 15px;
+            background: #0d0d0d;
+            border: 1px solid #333;
+            border-radius: 4px;
+        }
+
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>ZulipIRC Memory Test Suite</h1>
+
+    <div id="memory-display">
+        Memory: <span id="mem-value">--</span> MB
+    </div>
+
+    <div class="controls">
+        <button id="run-tests">Run All Tests</button>
+        <button id="run-stress">Stress Test (60s)</button>
+        <button id="gen-report">Memory Report</button>
+        <button id="clear-output">Clear</button>
+    </div>
+
+    <div id="output"></div>
+
+    <div id="summary" style="display: none;">
+        <h3>Summary</h3>
+        <div class="summary-item">
+            <span>Total Tests:</span>
+            <span id="total-tests">0</span>
+        </div>
+        <div class="summary-item">
+            <span>Passed:</span>
+            <span id="passed-tests" class="pass">0</span>
+        </div>
+        <div class="summary-item">
+            <span>Failed:</span>
+            <span id="failed-tests" class="fail">0</span>
+        </div>
+    </div>
+
+    <!-- Load app modules -->
+    <script src="../js/memory-monitor.js"></script>
+    <script src="../js/message-store.js"></script>
+    <script src="memory-test.js"></script>
+
+    <script>
+        const output = document.getElementById('output');
+        const memValue = document.getElementById('mem-value');
+        const summary = document.getElementById('summary');
+
+        // Capture console output
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+
+        function formatLine(text, type = '') {
+            const line = document.createElement('div');
+            line.className = type;
+
+            if (text.startsWith('✓')) {
+                line.className = 'pass';
+            } else if (text.startsWith('✗')) {
+                line.className = 'fail';
+            } else if (text.startsWith('===') || text.startsWith('---')) {
+                line.className = 'header';
+            }
+
+            line.textContent = text;
+            return line;
+        }
+
+        console.log = (...args) => {
+            originalLog.apply(console, args);
+            output.appendChild(formatLine(args.join(' ')));
+            output.scrollTop = output.scrollHeight;
+        };
+
+        console.error = (...args) => {
+            originalError.apply(console, args);
+            output.appendChild(formatLine(args.join(' '), 'fail'));
+            output.scrollTop = output.scrollHeight;
+        };
+
+        console.warn = (...args) => {
+            originalWarn.apply(console, args);
+            output.appendChild(formatLine(args.join(' '), 'info'));
+            output.scrollTop = output.scrollHeight;
+        };
+
+        // Update memory display
+        function updateMemoryDisplay() {
+            if (performance.memory) {
+                const mb = (performance.memory.usedJSHeapSize / (1024 * 1024)).toFixed(2);
+                memValue.textContent = mb;
+            } else {
+                memValue.textContent = 'N/A';
+            }
+        }
+
+        setInterval(updateMemoryDisplay, 1000);
+        updateMemoryDisplay();
+
+        // Button handlers
+        document.getElementById('run-tests').addEventListener('click', async (e) => {
+            e.target.disabled = true;
+            output.innerHTML = '';
+            summary.style.display = 'none';
+
+            try {
+                const results = await MemoryTest.run();
+
+                summary.style.display = 'block';
+                document.getElementById('total-tests').textContent = results.total;
+                document.getElementById('passed-tests').textContent = results.passed;
+                document.getElementById('failed-tests').textContent = results.failed;
+            } catch (err) {
+                console.error('Test error:', err);
+            }
+
+            e.target.disabled = false;
+        });
+
+        document.getElementById('run-stress').addEventListener('click', async (e) => {
+            e.target.disabled = true;
+            output.innerHTML = '';
+
+            try {
+                await MemoryTest.stressTest(60000);
+            } catch (err) {
+                console.error('Stress test error:', err);
+            }
+
+            e.target.disabled = false;
+        });
+
+        document.getElementById('gen-report').addEventListener('click', () => {
+            output.innerHTML = '';
+            MemoryTest.generateReport();
+        });
+
+        document.getElementById('clear-output').addEventListener('click', () => {
+            output.innerHTML = '';
+            summary.style.display = 'none';
+        });
+    </script>
+</body>
+</html>
